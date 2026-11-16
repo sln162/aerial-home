@@ -176,7 +176,7 @@ public class MainActivity extends Activity {
             statusColor = warn;
         } else {
             statusText = "正常";
-            statusHint = "按主页键弹出选择框时，点掉它回到 Aerial";
+            statusHint = "宽记录指向 Aerial 时，按主页键弹出的框由它点掉；记录清空了就交给 Aerial 自己收";
             statusColor = green;
         }
         block(left, "运行状态", statusText, statusColor, statusHint);
@@ -356,8 +356,8 @@ public class MainActivity extends Activity {
         parent.addView(homeLine, hlp);
 
         TextView note = new TextView(this);
-        note.setText("ResolverActivity 就是系统在问「用哪个桌面」，本应用会点掉它，"
-                + "所以零条记录也能用。");
+        note.setText("「用哪个桌面」的框归谁收：上面那条开机查询（宽）答 Aerial 时由本应用点掉；"
+                + "答 ResolverActivity（记录已清空）时交给 Aerial 自己关，约 0.4 秒。");
         note.setTextColor(faint);
         note.setTextSize(14);
         note.setLineSpacing(dp(3), 1f);
@@ -377,7 +377,8 @@ public class MainActivity extends Activity {
         parent.addView(l);
 
         TextView body = new TextView(this);
-        body.setText("按主页键弹出选择框 → 点掉它，回到 Aerial\n"
+        body.setText("宽记录写了 Aerial → 按主页键的框由它点掉\n"
+                + "记录清空了（宽查询落 ResolverActivity）→ 交给 Aerial 自己收，约 0.4 秒\n"
                 + "开机真的黑屏 → 连续两次没画面就把桌面拉起来\n"
                 + "不写主屏幕记录、不发返回键、不停用极米桌面");
         body.setTextColor(faint);

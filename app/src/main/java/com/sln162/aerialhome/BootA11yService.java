@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.graphics.PixelFormat;
@@ -876,10 +877,10 @@ public class BootA11yService extends AccessibilityService {
      * 不写任何首选记录。两条都走不通时退化到点"取消"（它本身就等价于对这个窗口按返回）。
      * 必须抢在被 Aerial 盖住之前动手：一旦盖住，getWindows() 里就看不到这个弹框了。
      *
-     * 1.9.26 的出场判断：Aerial ≥ 1.97 自己会发 BACK 关这个框（#1523），这条路上我们一步都不做——
-     * 不点，也不读窗口列表：读取会落到那个"窗口在、焦点在、但什么都没画"的框上，
-     * 它本来就不响应，我们多碰一次只会让自己更难堪，没有半点好处。
-     * Aerial < 1.97 不会关这个框，仍照 1.9.22 原样立刻点。
+     * 出场判断（1.9.27）：Aerial ≥ 1.97 会自己发 BACK 关这个框（#1523），但只在"宽查询不答 Aerial"
+     * 时才做——它先看宽记录（MAIN + HOME，不带 DEFAULT），答到 Aerial 就整段跳过（#1569 那档）。
+     * 所以除了版本号还得看宽记录：宽记录答 Aerial 时这个框没人收，我们照 1.9.22 原样立刻点；
+     * 宽记录不答 Aerial（例如两条首选记录都清空、落到 ResolverActivity）时，才由 Aerial 收，我们退场。
      */
     private void killChooser(final String who, final long eventAt) {
         if (handler == null) {
@@ -893,24 +894,50 @@ public class BootA11yService extends AccessibilityService {
         handler.post(new Probe(who, eventAt, 0));
     }
 
-    /** 缓存：Aerial 是不是已经带 #1523（1.97 起） */
+    /** 缓存：Aerial 自己会不会关这个框（版本带 #1523，且宽记录没答案给 Aerial） */
     private Boolean aerialHasBack = null;
 
-    /** 查 Aerial 自己的版本号决定谁出场；查不到就当我们上（老版本来收框） */
+    /**
+     * 谁出场。两件事一起看：Aerial 版本够不够（≥ 1.97 带 #1523），以及宽查询答不答 Aerial。
+     * Aerial 新版遇到"宽记录答 Aerial"会整段跳过（#1569），框就没人收——这一档该我们上，不看版本号。
+     * 宽记录不答 Aerial 时（例如首选记录都清空），框由 Aerial 的 BACK 收，我们退场。
+     * 每次弹框都重算：记录随时可能被改，一次性定死的缓存会让判断和机器状态脱节。
+     */
     private boolean aerialClosesChooser() {
-        if (aerialHasBack != null) {
-            return aerialHasBack;
-        }
         boolean ok = false;
+        long t0 = SystemClock.uptimeMillis();
         try {
             String vn = getPackageManager().getPackageInfo(AERIAL_PKG, 0).versionName;
-            ok = versionAtLeast(vn, 1, 97);
-            log("aerial version " + vn + " -> " + (ok ? "stand down" : "we handle the chooser"));
+            boolean newEnough = versionAtLeast(vn, 1, 97);
+            boolean wide = wideRecordIsAerial();
+            ok = newEnough && !wide;
+            long spent = SystemClock.uptimeMillis() - t0;
+            Boolean before = aerialHasBack;
+            aerialHasBack = ok;
+            if (before == null || before.booleanValue() != ok) {
+                log("aerial version " + vn + ", wide record answers Aerial=" + wide
+                        + " -> " + (ok ? "stand down" : "we handle the chooser")
+                        + " (" + spent + "ms)");
+            }
         } catch (Throwable t) {
-            log("aerial version unknown: " + t);
+            if (aerialHasBack == null) {
+                log("aerial version unknown: " + t);
+                aerialHasBack = false;
+            }
+            return aerialHasBack;
         }
-        aerialHasBack = ok;
         return ok;
+    }
+
+    /** 宽查询（MAIN + HOME，不带 DEFAULT）是不是落到 Aerial：不带 CATEGORY_DEFAULT 的记录只看这个查询。 */
+    private boolean wideRecordIsAerial() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = getPackageManager().resolveActivity(home, 0);
+            return ri != null && ri.activityInfo != null && AERIAL_PKG.equals(ri.activityInfo.packageName);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /** 只按数字比：1.97 / 1.97.0 / 1.98 都算 >= 1.97 */
